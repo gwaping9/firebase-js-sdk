@@ -109,14 +109,23 @@ export class FirebaseError extends Error {
   }
 }
 
-export class ErrorFactory<ErrorCode extends string> {
+export class ErrorFactory<
+  ErrorCode extends string,
+  ErrorParams extends Partial<{ readonly [K in ErrorCode]: ErrorData }> = {}
+> {
   constructor(
     private readonly service: string,
     private readonly serviceName: string,
     private readonly errors: ErrorList<ErrorCode>
   ) {}
 
-  create(code: ErrorCode, data: ErrorData = {}): FirebaseError {
+  create<K extends ErrorCode>(
+    code: K,
+    // For some reason, doesn't work with something like this to make the parameter optional only
+    // if it's not defined in ErrorParams
+    // data: ErrorParams[K] extends undefined ? ErrorData | void : ErrorParams[K]
+    data?: ErrorParams[K] extends undefined ? ErrorData : ErrorParams[K]
+  ): FirebaseError {
     const fullCode = `${this.service}/${code}`;
     const template = this.errors[code];
 
@@ -128,10 +137,12 @@ export class ErrorFactory<ErrorCode extends string> {
     // Keys with an underscore at the end of their name are not included in
     // error.data for some reason.
     const filteredData: ErrorData = {};
-    // TODO: Replace with Object.entries when lib is updated to es2017.
-    for (const key of Object.keys(data)) {
-      if (key.slice(-1) !== '_') {
-        filteredData[key] = data[key];
+    if (data) {
+      // TODO: Replace with Object.entries when lib is updated to es2017.
+      for (const key of Object.keys(data)) {
+        if (key.slice(-1) !== '_') {
+          filteredData[key] = data[key];
+        }
       }
     }
     return new FirebaseError(fullCode, fullMessage, filteredData);

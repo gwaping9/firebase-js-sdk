@@ -25,7 +25,12 @@ let errors: ErrorList<Err> = {
   'anon-replace': 'Hello, {$repl_}!'
 };
 
-let error = new ErrorFactory<Err>('fake', 'Fake', errors);
+interface ErrorParams {
+  'file-not-found': { file: string };
+  'anon-replace': { repl_: string };
+}
+
+let error = new ErrorFactory<Err, ErrorParams>('fake', 'Fake', errors);
 
 describe('FirebaseError', () => {
   it('creates an Error', () => {
@@ -61,7 +66,7 @@ describe('FirebaseError', () => {
   });
 
   it('uses the key in the template if the replacement is missing', () => {
-    let e = error.create('file-not-found', { fileX: 'foo.txt' });
+    let e = error.create('file-not-found', { fileX: 'foo.txt' } as any);
     assert.equal(e.code, 'fake/file-not-found');
     assert.equal(
       e.message,
