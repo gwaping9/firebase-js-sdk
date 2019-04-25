@@ -15,50 +15,52 @@
  * limitations under the License.
  */
 import { assert } from 'chai';
-import { ErrorFactory, ErrorList, patchCapture } from '../src/errors';
+import { ErrorFactory, ErrorList, FirebaseError } from '../src/errors';
 
 type Err = 'generic-error' | 'file-not-found' | 'anon-replace';
 
-let errors = {
+let errors: ErrorList<Err> = {
   'generic-error': 'Unknown error',
   'file-not-found': "Could not find file: '{$file}'",
   'anon-replace': 'Hello, {$repl_}!'
-} as ErrorList<Err>;
+};
 
 let error = new ErrorFactory<Err>('fake', 'Fake', errors);
 
 describe('FirebaseError', () => {
-  it('create', () => {
+  it('creates an Error', () => {
     let e = error.create('generic-error');
+    assert.instanceOf(e, Error);
+    assert.instanceOf(e, FirebaseError);
     assert.equal(e.code, 'fake/generic-error');
     assert.equal(e.message, 'Fake: Unknown error (fake/generic-error).');
   });
 
-  it('String replacement', () => {
+  it('replaces template values with data', () => {
     let e = error.create('file-not-found', { file: 'foo.txt' });
     assert.equal(e.code, 'fake/file-not-found');
     assert.equal(
       e.message,
       "Fake: Could not find file: 'foo.txt' (fake/file-not-found)."
     );
-    assert.equal((e as any).file, 'foo.txt');
+    assert.equal(e.data.file, 'foo.txt');
   });
 
-  it('Anonymous String replacement', () => {
+  it('anonymously replaces template values with data', () => {
     let e = error.create('anon-replace', { repl_: 'world' });
     assert.equal(e.code, 'fake/anon-replace');
     assert.equal(e.message, 'Fake: Hello, world! (fake/anon-replace).');
-    assert.isUndefined((e as any).repl_);
+    assert.isUndefined(e.data.repl_);
   });
 
-  it('Missing template', () => {
+  it('uses "Error" as template when template is missing', () => {
     // Cast to avoid compile-time error.
     let e = error.create(('no-such-code' as any) as Err);
     assert.equal(e.code, 'fake/no-such-code');
     assert.equal(e.message, 'Fake: Error (fake/no-such-code).');
   });
 
-  it('Missing replacement', () => {
+  it('uses the key in the template if the replacement is missing', () => {
     let e = error.create('file-not-found', { fileX: 'foo.txt' });
     assert.equal(e.code, 'fake/file-not-found');
     assert.equal(
@@ -66,45 +68,23 @@ describe('FirebaseError', () => {
       "Fake: Could not find file: '<file?>' (fake/file-not-found)."
     );
   });
-});
 
-// Run the stack trace tests with, and without, Error.captureStackTrace
-let realCapture = patchCapture();
-stackTests(realCapture);
-stackTests(undefined);
+  it('has stack', () => {
+    let e = error.create('generic-error');
+    // Multi-line match trick - .* does not match \n
+    assert.match(e.stack, /FirebaseError[\s\S]/);
+  });
 
-function stackTests(fakeCapture: any) {
-  let saveCapture: any;
-
-  describe(
-    'Error#stack tests - Error.captureStackTrace is ' +
-      (fakeCapture ? 'defined' : 'NOT defined'),
-    () => {
-      before(() => {
-        saveCapture = patchCapture(fakeCapture);
-      });
-
-      after(() => {
-        patchCapture(saveCapture);
-      });
-
-      it('has stack', () => {
-        let e = error.create('generic-error');
-        // Multi-line match trick - .* does not match \n
-        assert.match(e.stack, /FirebaseError[\s\S]/);
-      });
-
-      it('stack frames', () => {
-        try {
-          dummy1();
-          assert.ok(false);
-        } catch (e) {
-          assert.match(e.stack, /dummy2[\s\S]*?dummy1/);
-        }
-      });
+  it('has function names in stack trace in correct order', () => {
+    try {
+      dummy1();
+      assert.ok(false);
+    } catch (e) {
+      assert.instanceOf(e, FirebaseError);
+      assert.match(e.stack, /dummy2[\s\S]*?dummy1/);
     }
-  );
-}
+  });
+});
 
 function dummy1() {
   dummy2();

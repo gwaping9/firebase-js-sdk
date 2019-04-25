@@ -30,7 +30,6 @@ export {
   ErrorFactory,
   ErrorList,
   FirebaseError,
-  patchCapture,
   StringLike
 } from './src/errors';
 export { jsonEval, stringify } from './src/json';
