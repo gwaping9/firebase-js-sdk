@@ -15,21 +15,28 @@
  * limitations under the License.
  */
 import { assert } from 'chai';
+import { stub } from 'sinon';
 import { ErrorFactory, ErrorList, FirebaseError } from '../src/errors';
 
-type Err = 'generic-error' | 'file-not-found' | 'anon-replace';
+type ErrorCode =
+  | 'generic-error'
+  | 'file-not-found'
+  | 'anon-replace'
+  | 'overwrite-field';
 
-let errors: ErrorList<Err> = {
+const ERROR_MAP: ErrorList<ErrorCode> = {
   'generic-error': 'Unknown error',
   'file-not-found': "Could not find file: '{$file}'",
-  'anon-replace': 'Hello, {$repl_}!'
+  'anon-replace': 'Hello, {$repl_}!',
+  'overwrite-field':
+    'I decided to use {$code} to represent the error code from my server.'
 };
 
-let error = new ErrorFactory<Err>('fake', 'Fake', errors);
+const ERROR_FACTORY = new ErrorFactory<ErrorCode>('fake', 'Fake', ERROR_MAP);
 
 describe('FirebaseError', () => {
   it('creates an Error', () => {
-    let e = error.create('generic-error');
+    const e = ERROR_FACTORY.create('generic-error');
     assert.instanceOf(e, Error);
     assert.instanceOf(e, FirebaseError);
     assert.equal(e.code, 'fake/generic-error');
@@ -37,31 +44,31 @@ describe('FirebaseError', () => {
   });
 
   it('replaces template values with data', () => {
-    let e = error.create('file-not-found', { file: 'foo.txt' });
+    const e = ERROR_FACTORY.create('file-not-found', { file: 'foo.txt' });
     assert.equal(e.code, 'fake/file-not-found');
     assert.equal(
       e.message,
       "Fake: Could not find file: 'foo.txt' (fake/file-not-found)."
     );
-    assert.equal(e.data.file, 'foo.txt');
+    assert.equal(e.file, 'foo.txt');
   });
 
   it('anonymously replaces template values with data', () => {
-    let e = error.create('anon-replace', { repl_: 'world' });
+    const e = ERROR_FACTORY.create('anon-replace', { repl_: 'world' });
     assert.equal(e.code, 'fake/anon-replace');
     assert.equal(e.message, 'Fake: Hello, world! (fake/anon-replace).');
-    assert.isUndefined(e.data.repl_);
+    assert.isUndefined(e.repl_);
   });
 
   it('uses "Error" as template when template is missing', () => {
     // Cast to avoid compile-time error.
-    let e = error.create(('no-such-code' as any) as Err);
+    const e = ERROR_FACTORY.create(('no-such-code' as any) as ErrorCode);
     assert.equal(e.code, 'fake/no-such-code');
     assert.equal(e.message, 'Fake: Error (fake/no-such-code).');
   });
 
   it('uses the key in the template if the replacement is missing', () => {
-    let e = error.create('file-not-found', { fileX: 'foo.txt' });
+    const e = ERROR_FACTORY.create('file-not-found', { fileX: 'foo.txt' });
     assert.equal(e.code, 'fake/file-not-found');
     assert.equal(
       e.message,
@@ -69,8 +76,23 @@ describe('FirebaseError', () => {
     );
   });
 
+  it('warns if overwriting a base error field with custom data', () => {
+    const warnStub = stub(console, 'warn');
+    const e = ERROR_FACTORY.create('overwrite-field', {
+      code: 'overwritten code'
+    });
+    assert.equal(e.code, 'overwritten code');
+    // TODO: use sinon-chai for this.
+    assert.ok(
+      warnStub.calledOnceWith(
+        'Overwriting FirebaseError base field "code" can cause unexpected behavior.'
+      )
+    );
+    warnStub.restore();
+  });
+
   it('has stack', () => {
-    let e = error.create('generic-error');
+    const e = ERROR_FACTORY.create('generic-error');
     // Multi-line match trick - .* does not match \n
     assert.match(e.stack, /FirebaseError[\s\S]/);
   });
@@ -91,6 +113,6 @@ function dummy1() {
 }
 
 function dummy2() {
-  let error = new ErrorFactory<Err>('dummy', 'Dummy', errors);
+  const error = new ErrorFactory<ErrorCode>('dummy', 'Dummy', ERROR_MAP);
   throw error.create('generic-error');
 }

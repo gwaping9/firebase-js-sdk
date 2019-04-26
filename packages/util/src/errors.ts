@@ -61,28 +61,25 @@ export type ErrorList<T extends string = string> = {
 const ERROR_NAME = 'FirebaseError';
 
 export interface StringLike {
-  toString: () => string;
+  toString(): string;
 }
 
 export interface ErrorData {
   [key: string]: StringLike | undefined;
 }
 
-export interface FirebaseError {
-  // Unique code for error - format is service/error-code-string
+export interface FirebaseError extends Error, ErrorData {
+  // Unique code for error - format is service/error-code-string.
   readonly code: string;
 
   // Developer-friendly error message.
   readonly message: string;
 
-  // Always 'FirebaseError'
+  // Always 'FirebaseError'.
   readonly name: typeof ERROR_NAME;
 
-  // Where available - stack backtrace in a string
-  readonly stack: string;
-
-  // Additional custom error data that was used in the template.
-  readonly data: ErrorData;
+  // Where available - stack backtrace in a string.
+  readonly stack?: string;
 }
 
 // Based on code from:
@@ -90,11 +87,7 @@ export interface FirebaseError {
 export class FirebaseError extends Error {
   readonly name = ERROR_NAME;
 
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly data: ErrorData = {}
-  ) {
+  constructor(readonly code: string, message: string) {
     super(message);
 
     // Fix For ES5
@@ -127,20 +120,25 @@ export class ErrorFactory<ErrorCode extends string> {
 
     // Keys with an underscore at the end of their name are not included in
     // error.data for some reason.
-    const filteredData: ErrorData = {};
+    const error = new FirebaseError(fullCode, fullMessage);
     // TODO: Replace with Object.entries when lib is updated to es2017.
     for (const key of Object.keys(data)) {
       if (key.slice(-1) !== '_') {
-        filteredData[key] = data[key];
+        if (key in error) {
+          console.warn(
+            `Overwriting FirebaseError base field "${key}" can cause unexpected behavior.`
+          );
+        }
+        error[key] = data[key];
       }
     }
-    return new FirebaseError(fullCode, fullMessage, filteredData);
+    return error;
   }
 }
 
 function replaceTemplate(template: string, data: ErrorData): string {
   return template.replace(PATTERN, (_, key) => {
-    let value = data != null ? data[key] : undefined;
+    const value = data[key];
     return value != null ? value.toString() : `<${key}?>`;
   });
 }
